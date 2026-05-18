@@ -1,0 +1,185 @@
+{
+  "categories": [
+    {
+      "id": 0,
+      "name": "ave_cormoran"
+    },
+    {
+      "id": 1,
+      "name": "ave_gaviota"
+    },
+    {
+      "id": 2,
+      "name": "ave_gaviotin"
+    },
+    {
+      "id": 3,
+      "name": "ave_otra"
+    },
+    {
+      "id": 4,
+      "name": "ave_pato"
+    },
+    {
+      "id": 5,
+      "name": "ave_pinguino"
+    },
+    {
+      "id": 6,
+      "name": "casilla_motorhome_carpa"
+    },
+    {
+      "id": 7,
+      "name": "cetaceo_ballena_franca"
+    },
+    {
+      "id": 8,
+      "name": "cetaceo_ballenato"
+    },
+    {
+      "id": 9,
+      "name": "elefante_destetado"
+    },
+    {
+      "id": 10,
+      "name": "elefante_destetado_muerto"
+    },
+    {
+      "id": 11,
+      "name": "elefante_hembra"
+    },
+    {
+      "id": 12,
+      "name": "elefante_hembra_muerta"
+    },
+    {
+      "id": 13,
+      "name": "elefante_lactante"
+    },
+    {
+      "id": 14,
+      "name": "elefante_lactante_intermedio_muerto"
+    },
+    {
+      "id": 15,
+      "name": "elefante_lactante_reciente_muerto"
+    },
+    {
+      "id": 16,
+      "name": "elefante_macho_AD\/SA_muerto"
+    },
+    {
+      "id": 17,
+      "name": "elefante_macho_alfa"
+    },
+    {
+      "id": 18,
+      "name": "elefante_macho_otro"
+    },
+    {
+      "id": 19,
+      "name": "embarcacion_kayak"
+    },
+    {
+      "id": 20,
+      "name": "embarcacion_lancha"
+    },
+    {
+      "id": 21,
+      "name": "embarcacion_otro"
+    },
+    {
+      "id": 22,
+      "name": "establecimiento_rural_estancia"
+    },
+    {
+      "id": 23,
+      "name": "haren_1"
+    },
+    {
+      "id": 24,
+      "name": "haren_2"
+    },
+    {
+      "id": 25,
+      "name": "haren_3"
+    },
+    {
+      "id": 26,
+      "name": "haren_4"
+    },
+    {
+      "id": 27,
+      "name": "lobo"
+    },
+    {
+      "id": 28,
+      "name": "lobo_muerto"
+    },
+    {
+      "id": 29,
+      "name": "negativo_alevoso"
+    },
+    {
+      "id": 30,
+      "name": "negativo_dudoso"
+    },
+    {
+      "id": 31,
+      "name": "pareja_solitaria"
+    },
+    {
+      "id": 32,
+      "name": "persona"
+    },
+    {
+      "id": 33,
+      "name": "reserva_de_fauna_puesto_de_control"
+    },
+    {
+      "id": 34,
+      "name": "residuo_cajon_plastico"
+    },
+    {
+      "id": 35,
+      "name": "residuo_otro"
+    },
+    {
+      "id": 36,
+      "name": "restos_de_naufragio"
+    },
+    {
+      "id": 37,
+      "name": "solos"
+    },
+    {
+      "id": 38,
+      "name": "terrestre_guanaco"
+    },
+    {
+      "id": 39,
+      "name": "terrestre_oveja"
+    },
+    {
+      "id": 40,
+      "name": "vehiculo_auto"
+    },
+    {
+      "id": 41,
+      "name": "vehiculo_camioneta"
+    },
+    {
+      "id": 42,
+      "name": "vehiculo_cuatriciclo"
+    },
+    {
+      "id": 43,
+      "name": "vehiculo_otro"
+    }
+  ],
+  "info": {
+    "year": 2025,
+    "version": "1.0",
+    "contributor": "Label Studio"
+  }
+}

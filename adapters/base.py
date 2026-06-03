@@ -1,17 +1,3 @@
-"""
-adapters/base.py
-─────────────────────────────────────────────────────────────────────────────
-Módulo 1 — Actividad 1.1: Contrato de Integración de Modelos
-Arquitectura desacoplada mediante adaptadores/plugins.
-
-Jerarquía:
-    BaseModelAdapter  (ABC — contrato)
-        └── YOLOv8SAHIAdapter  (implementación concreta para YOLOv8 + SAHI)
-
-Servicio auxiliar:
-    ModelService  — resuelve "default vs. local" y cachea la instancia activa
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -65,9 +51,6 @@ class PredictionResult:
         }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. Contrato abstracto — BaseModelAdapter
-# ══════════════════════════════════════════════════════════════════════════════
 
 class BaseModelAdapter(ABC):
     """

@@ -1,4 +1,4 @@
 flask
 werkzeug
-ultralytics
-opencv-python-headless
+# ultralytics
+# opencv-python-headless

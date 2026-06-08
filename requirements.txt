@@ -1,0 +1,4 @@
+flask
+werkzeug
+ultralytics
+opencv-python-headless

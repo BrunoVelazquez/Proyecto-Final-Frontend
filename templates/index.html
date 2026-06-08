@@ -3,6 +3,7 @@
 {% block ui_overlays %}
 <div id="vista-principal" class="fab-container-left">
   <button class="map-pill-btn" id="btn-cargar">Cargar campaña</button>
+  <!-- <button class="map-pill-btn" id="btn-nueva">Subir campaña nueva</button> -->
 </div>
 
 <div id="vista-carga" class="menu-panel" style="display: none;">
@@ -356,7 +357,7 @@
   const vistaPrincipal = document.getElementById('vista-principal');
   const vistaCarga = document.getElementById('vista-carga');
 
-  btnNueva.addEventListener('click', () => {
+  btnNueva?.addEventListener('click', () => {
     vistaPrincipal.style.display = 'none';
     vistaCarga.style.display = 'block';
   });

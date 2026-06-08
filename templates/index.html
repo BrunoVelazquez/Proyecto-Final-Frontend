@@ -333,8 +333,12 @@
           <button class="lb-tool-btn" id="tool-draw">✏ Draw</button>
           <button class="lb-tool-btn" id="tool-delete">🗑 Borrar</button>
         </div>
-        <select id="lb-class-select"></select>
+
+        <div style="margin: 10px 12px 2px; font-size: 11px; color: #90cdf4;">Cambiar a</div>
+        <select id="lb-class-select" disabled></select>
+        <h4 style="margin-top: 10px;">Objetos encontrados</h4>
         <div id="lb-box-list"></div>
+
         <button id="lb-save-btn">💾 Guardar</button>
         <div id="lb-status"></div>
       </div>
@@ -757,10 +761,14 @@
 
   function selectBox(i) {
     selectedIdx = i;
+    const selectEl = document.getElementById('lb-class-select');
+
     if (i >= 0) {
-      classSelect.value = boxes[i].id;
+      selectEl.value = boxes[i].id;
+      selectEl.disabled = false; // Habilitar cuando hay selección
       deleteBtn.style.display = 'block';
     } else {
+      selectEl.disabled = true;  // Deshabilitar cuando no hay nada
       deleteBtn.style.display = 'none';
     }
     renderAll();

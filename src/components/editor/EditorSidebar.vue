@@ -183,7 +183,7 @@ const groupedFeatures = computed(() => {
       </Transition>
       <!-- Botón de gráficos -->
       <ButtonComp class="lb-chart-btn" @click="$emit('update:showCharts', !showCharts)">
-        📊 {{ showCharts ? 'Ocultar' : 'Ver' }} conteo
+        {{ showCharts ? 'Ocultar' : 'Ver' }} conteo
       </ButtonComp>
 
       <!-- Guardar -->

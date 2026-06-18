@@ -1,11 +1,8 @@
 // components/composables/useCategories.js
 import { ref } from 'vue'
 
-const CLASS_COLORS = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-  '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
-  '#F1948A', '#82E0AA', '#F8C471', '#AED6F1', '#A9DFBF',
-]
+// Golden-ratio hue step ensures maximal angular distance between successive colors
+const GOLDEN_ANGLE = 137.508
 
 export function useCategories() {
   const categoryColorMap = ref({})
@@ -15,7 +12,11 @@ export function useCategories() {
 
   function getCategoryColor(category) {
     if (!categoryColorMap.value[category]) {
-      categoryColorMap.value[category] = CLASS_COLORS[nextColorIndex % CLASS_COLORS.length]
+      // Spread hue using golden angle, vary lightness slightly to add more separation
+      const hue = (nextColorIndex * GOLDEN_ANGLE) % 360
+      const lightness = 55 + (nextColorIndex % 3) * 8   // 55%, 63%, 71%
+      const saturation = 72 - (nextColorIndex % 2) * 12  // 72% or 60%
+      categoryColorMap.value[category] = `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`
       nextColorIndex++
     }
     return categoryColorMap.value[category]

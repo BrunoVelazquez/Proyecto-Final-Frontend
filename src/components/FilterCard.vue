@@ -12,7 +12,7 @@ defineEmits(['change'])
   <div class="floating-filter-card">
     <h4>Filtros de Campaña</h4>
     <div class="filter-scroll-area">
-      <div v-for="cat in availableCategories" :key="cat" class="checkbox-row">
+      <div v-for="cat in availableCategories.toSorted()" :key="cat" class="checkbox-row">
         <input
           type="checkbox"
           :id="'filter-' + cat"
@@ -60,10 +60,36 @@ defineEmits(['change'])
   font-size: 13px;
   color: #606266;
 }
-.checkbox-row input {
-  width: 16px;
-  height: 16px;
+.checkbox-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  min-height: 15px;
+  border: 2px solid #9da8b7;
+  border-radius: 3px;
+  background: white;
   cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+}
+.checkbox-row input[type="checkbox"]:checked {
+  background: #5b5394;
+  border-color: #5b5394;
+}
+.checkbox-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 5px;
+  height: 9px;
+  border: 2px solid white;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
 }
 .legend-color-dot {
   width: 12px;

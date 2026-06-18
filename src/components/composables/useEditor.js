@@ -233,7 +233,17 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
 
     if (allHidden.value) return
 
-    currentImageFeatures.value.forEach((b, i) => {
+    // Sort indices by area descending so smaller boxes are drawn on top
+    const sortedIndices = currentImageFeatures.value
+      .map((b, i) => {
+        const [xmin, ymin, xmax, ymax] = b.bbox
+        return { index: i, area: (xmax - xmin) * (ymax - ymin) }
+      })
+      .sort((a, b) => b.area - a.area)
+      .map(item => item.index)
+
+    sortedIndices.forEach((i) => {
+      const b = currentImageFeatures.value[i]
       if (hiddenCategories.value.has(b.category) || hiddenBoxes.value.has(b)) return
 
       const color = getCategoryColor(b.category)
@@ -248,8 +258,10 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
       const isSelected = i === selectedBoxIndex.value
 
       if (isSelected) {
-        ctx.fillStyle = color + '22'
+        ctx.globalAlpha = 0.15
+        ctx.fillStyle = color
         ctx.fillRect(tl.x, tl.y, bw, bh)
+        ctx.globalAlpha = 1.0
       }
 
       ctx.strokeStyle = color
@@ -257,15 +269,24 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
       ctx.strokeRect(tl.x, tl.y, bw, bh)
 
       const label = b.category
-      ctx.font = '11px system-ui'
+      ctx.font = `bold 10px system-ui`
       const tw = ctx.measureText(label).width
-      ctx.fillStyle = color + 'cc'
-      ctx.fillRect(tl.x, tl.y - 16, tw + 6, 16)
-      ctx.fillStyle = '#000'
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'
+      ctx.fillRect(tl.x, tl.y - 15, tw + 6, 15)
+      ctx.fillStyle = '#ffffff'
       ctx.fillText(label, tl.x + 3, tl.y - 3)
-
-      if (isSelected) drawHandles(tl.x, tl.y, bw, bh, color)
     })
+
+    // Draw handles for selected box on top of all other boxes
+    if (selectedBoxIndex.value >= 0 && selectedBoxIndex.value < currentImageFeatures.value.length) {
+      const b = currentImageFeatures.value[selectedBoxIndex.value]
+      if (!hiddenCategories.value.has(b.category) && !hiddenBoxes.value.has(b)) {
+        const [xmin, ymin, xmax, ymax] = b.bbox
+        const tl = absToCanvas(xmin, ymin)
+        const br = absToCanvas(xmax, ymax)
+        drawHandles(tl.x, tl.y, br.x - tl.x, br.y - tl.y, getCategoryColor(b.category))
+      }
+    }
 
     if (drawing.active) {
       ctx.strokeStyle = '#1D9E75'
@@ -463,15 +484,25 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
 
   function hitBox(cx, cy) {
     if (allHidden.value) return -1
-    for (let i = currentImageFeatures.value.length - 1; i >= 0; i--) {
+    let bestIdx = -1
+    let minArea = Infinity
+
+    for (let i = 0; i < currentImageFeatures.value.length; i++) {
       const box = currentImageFeatures.value[i]
       if (hiddenCategories.value.has(box.category) || hiddenBoxes.value.has(box)) continue
       const [xmin, ymin, xmax, ymax] = box.bbox
       const tl = absToCanvas(xmin, ymin)
       const br = absToCanvas(xmax, ymax)
-      if (cx >= tl.x && cx <= br.x && cy >= tl.y && cy <= br.y) return i
+
+      if (cx >= tl.x && cx <= br.x && cy >= tl.y && cy <= br.y) {
+        const area = (xmax - xmin) * (ymax - ymin)
+        if (area < minArea) {
+          minArea = area
+          bestIdx = i
+        }
+      }
     }
-    return -1
+    return bestIdx
   }
 
   const HANDLE_NAMES = ['tl', 'tc', 'tr', 'ml', 'mr', 'bl', 'bc', 'br']

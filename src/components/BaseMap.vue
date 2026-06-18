@@ -5,11 +5,13 @@ import ButtonComp from './ButtonComp.vue'
 import FilterCard from './FilterCard.vue'
 import MarkerInfoCard from './MarkerInfoCard.vue'
 import EditorLightbox from './editor/EditorLightbox.vue'
+import OffsetCalibrator from './OffsetCalibrator.vue'
 
 import { useMap } from './composables/useMap'
 import { useCategories } from './composables/useCategories'
 import { useCampaign } from './composables/useCampaign'
 import { useEditor } from './composables/useEditor'
+import { useTrajectory } from './composables/useTrajectory'
 
 // --- Referencias del DOM ---
 const mapContainer = ref()
@@ -29,15 +31,49 @@ function getImageUrl(imageName) {
 const {
   campaignLoaded,
   selectedFeature,
+  unmappedFeatures,
+  placementModeFeature,
   loadCampaign,
   handleFilterChange,
   updateFeatureDetections,
-  setOpenEditorCallback,
+  showTrajectory,
+  clearTrajectoryLayer,
+  applyOffset,
 } = useCampaign(
   map,
   markersLayerGroup,
-  { getCategoryColor, extractCategories, selectedCategories, availableCategories },
+  { getCategoryColor, extractCategories, selectedCategories, availableCategories, getImageUrl },
 )
+
+// --- Calibración de desfasaje GPS ---
+const { trajectoryData, loadTrajectory, getPositionAtOffset } = useTrajectory()
+const calibrationMode = ref(false)
+const gpsFileInput = ref(null)
+
+async function startCalibration() {
+  gpsFileInput.value.click()
+}
+
+async function onGpsFileSelected(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  event.target.value = '' // reset so same file can be re-selected
+  await loadTrajectory(file)
+  showTrajectory(trajectoryData.value)
+  calibrationMode.value = true
+  selectedFeature.value = null // ask user to pick a reference photo
+}
+
+function onApplyOffset(offsetSeconds) {
+  applyOffset(offsetSeconds, trajectoryData.value)
+  clearTrajectoryLayer()
+  calibrationMode.value = false
+}
+
+function onCancelCalibration() {
+  clearTrajectoryLayer()
+  calibrationMode.value = false
+}
 
 // --- Editor canvas ---
 const {
@@ -78,9 +114,6 @@ const {
   saveChanges,
 } = useEditor({ getCategoryColor, availableCategories, getImageUrl })
 
-// Conectamos el popup del mapa con el editor
-setOpenEditorCallback(openEditor)
-
 // Cuando se guarda en el editor, escribe de vuelta al geoJSON y re-renderiza marcadores
 setOnSaveCallback((imageName, detections) => {
   updateFeatureDetections(imageName, detections)
@@ -97,19 +130,57 @@ function onFilterChange(cat) {
 
 <template>
   <div class="app-container">
-    <div class="map-view-wrapper">
+    <div class="map-view-wrapper" :class="{ 'placement-mode': !!placementModeFeature }">
       <div ref="mapContainer" class="map-canvas"></div>
 
       <div class="fab-position-left">
+        <ButtonComp
+          v-if="campaignLoaded"
+          label="Calibrar GPS"
+          variant="primary"
+          class="pill-trigger-btn pill-calibrate-btn"
+          @click="startCalibration"
+        />
         <ButtonComp
           label="Cargar campaña"
           variant="primary"
           class="pill-trigger-btn"
           @click="loadCampaign"
         />
+        <!-- Hidden GPS file picker -->
+        <input
+          ref="gpsFileInput"
+          type="file"
+          accept=".txt,.csv"
+          style="display: none"
+          @change="onGpsFileSelected"
+        />
       </div>
 
-      <!-- Panel derecho: filtros + info del marcador seleccionado -->
+      <!-- Panel superior izquierdo: info del marcador seleccionado y calibrador -->
+      <div v-if="campaignLoaded" class="top-left-panel">
+        <MarkerInfoCard
+          v-if="!calibrationMode"
+          :feature="selectedFeature"
+          :getCategoryColor="getCategoryColor"
+          :getImageUrl="getImageUrl"
+          @openEditor="openEditor"
+          @close="selectedFeature = null"
+        />
+
+        <!-- Calibrador de desfasaje GPS -->
+        <OffsetCalibrator
+          v-if="calibrationMode"
+          :referenceFeature="selectedFeature"
+          :getImageUrl="getImageUrl"
+          :getPositionAtOffset="getPositionAtOffset"
+          :map="map"
+          @apply="onApplyOffset"
+          @cancel="onCancelCalibration"
+        />
+      </div>
+
+      <!-- Panel derecho: filtros y lista de no ubicados -->
       <div v-if="campaignLoaded" class="right-panel">
         <FilterCard
           :availableCategories="availableCategories"
@@ -117,13 +188,46 @@ function onFilterChange(cat) {
           :getCategoryColor="getCategoryColor"
           @change="onFilterChange"
         />
-        <MarkerInfoCard
-          :feature="selectedFeature"
-          :getCategoryColor="getCategoryColor"
-          :getImageUrl="getImageUrl"
-          @openEditor="openEditor"
-          @close="selectedFeature = null"
-        />
+
+        <div v-if="unmappedFeatures.length > 0" class="unmapped-list-container">
+          <div class="unmapped-header">
+            <h4>Imágenes sin GPS ({{ unmappedFeatures.length }})</h4>
+            <p v-if="placementModeFeature" class="placement-instruction">Haz click en el mapa para ubicar la imagen seleccionada.</p>
+          </div>
+          <div class="unmapped-list">
+            <div v-for="feat in unmappedFeatures" :key="feat.properties.image_name" 
+                 class="unmapped-item"
+                 :class="{ 'is-placing': placementModeFeature?.properties.image_name === feat.properties.image_name }">
+              <img :src="getImageUrl(feat.properties.image_name)" alt="thumbnail" class="unmapped-thumb" />
+              <div class="unmapped-info">
+                <span class="unmapped-name">{{ feat.properties.image_name }}</span>
+                <div class="unmapped-actions">
+                  <button 
+                    v-if="placementModeFeature?.properties.image_name !== feat.properties.image_name"
+                    class="btn-place" 
+                    @click.stop="placementModeFeature = feat"
+                    :disabled="calibrationMode"
+                  >
+                    Ubicar en mapa
+                  </button>
+                  <button 
+                    v-else
+                    class="btn-cancel-place" 
+                    @click.stop="placementModeFeature = null"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    class="btn-edit"
+                    @click.stop="openEditor(feat.properties)"
+                  >
+                    Editar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -188,6 +292,9 @@ function onFilterChange(cat) {
   width: 100%;
   height: 100%;
 }
+.placement-mode .map-canvas {
+  cursor: crosshair !important;
+}
 
 .fab-position-left {
   position: absolute;
@@ -199,17 +306,165 @@ function onFilterChange(cat) {
   gap: 16px;
 }
 
-.right-panel {
+.top-left-panel {
   position: absolute;
   top: 20px;
-  right: 20px;
+  left: 20px;
   z-index: 1000;
-  width: 260px;
+  width: 320px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   max-height: calc(100vh - 40px);
   overflow-y: auto;
+}
+
+.right-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 40px);
+  pointer-events: none;
+}
+
+.right-panel > * {
+  pointer-events: auto;
+}
+
+/* UI no ubicados */
+.unmapped-list-container {
+  background: white;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+}
+
+.unmapped-header h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #2c3e50;
+}
+
+.placement-instruction {
+  margin: 0;
+  font-size: 12px;
+  color: #e67e22;
+  font-weight: bold;
+}
+
+.unmapped-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.unmapped-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+.unmapped-item.is-placing {
+  border-color: #e67e22;
+  background: #fff3e0;
+}
+
+.unmapped-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.unmapped-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+}
+
+.unmapped-name {
+  font-size: 11px;
+  word-break: break-all;
+  color: #555;
+}
+
+.btn-place {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.2s;
+}
+
+.btn-place:hover:not(:disabled) {
+  background: #2980b9;
+}
+
+.btn-place:disabled {
+  background: #bdc3c7;
+  cursor: not-allowed;
+}
+
+.btn-cancel-place {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.2s;
+}
+
+.btn-cancel-place:hover {
+  background: #c0392b;
+}
+
+.unmapped-item.is-placing {
+  border-color: #e67e22;
+  background: #fff3e0;
+}
+
+.unmapped-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.btn-edit {
+  background: #9b59b6;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.2s;
+}
+
+.btn-edit:hover {
+  background: #8e44ad;
 }
 
 .pill-trigger-btn :deep(button) {
@@ -227,5 +482,45 @@ function onFilterChange(cat) {
 .pill-trigger-btn :deep(button:hover) {
   background-color: #f8f8f8;
   transform: translateY(-2px);
+}
+
+.pill-calibrate-btn :deep(button) {
+  background-color: #0f3460;
+  color: #90cdf4;
+}
+.pill-calibrate-btn :deep(button:hover) {
+  background-color: #1a4a7a;
+  color: #bee3f8;
+}
+
+/* Alineación de controles en la esquina inferior derecha */
+:deep(.leaflet-bottom.leaflet-right) {
+  display: grid !important;
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 5px;
+  row-gap: 8px;
+  align-items: end;
+  justify-items: end;
+  padding-right: 10px;
+  padding-bottom: 10px;
+  pointer-events: none;
+}
+:deep(.leaflet-bottom.leaflet-right .leaflet-control) {
+  margin: 0 !important;
+  clear: none !important;
+  pointer-events: auto;
+}
+:deep(.leaflet-control-layers) {
+  grid-column: 2;
+  grid-row: 1;
+}
+:deep(.leaflet-control-zoom) {
+  grid-column: 3;
+  grid-row: 1;
+}
+:deep(.leaflet-control-attribution) {
+  grid-column: 1 / span 3;
+  grid-row: 2;
 }
 </style>

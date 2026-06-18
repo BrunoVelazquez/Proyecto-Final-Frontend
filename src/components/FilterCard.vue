@@ -30,15 +30,11 @@ defineEmits(['change'])
 
 <style scoped>
 .floating-filter-card {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 260px;
-  max-height: 400px;
+  width: 100%;
+  max-height: 300px;
   background: white;
   border-radius: 12px;
   padding: 16px;
-  z-index: 1000;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;

@@ -12,44 +12,16 @@ export function useCampaign(
   const geoJsonData = ref(null)
   const campaignLoaded = ref(false)
 
+  // Feature seleccionada al hacer click en un marcador
+  const selectedFeature = ref(null)
+
   // Callback inyectado desde BaseMap.vue para abrir el editor
   let onOpenEditor = null
   function setOpenEditorCallback(fn) {
     onOpenEditor = fn
   }
 
-  function getImageUrl(imageName) {
-    return new URL(`../../assets/images/${imageName}`, import.meta.url).href
-  }
-
-  function createPopupContent(props, summary) {
-    let listItemsHtml = Object.entries(summary)
-      .map(
-        ([cat, count]) =>
-          `<li><span class="dot" style="background:${getCategoryColor(cat)}"></span> <b>${cat}:</b> ${count}</li>`,
-      )
-      .join('')
-
-    const container = document.createElement('div')
-    container.className = 'custom-map-popup'
-    container.innerHTML = `
-      <h4>${props.image_name}</h4>
-      <div class="popup-image-frame">
-        <img src="${getImageUrl(props.image_name)}" alt="Cargando..." class="popup-preview-img" />
-      </div>
-      <p class="popup-total">Total detectados: <b>${props.total_detections}</b></p>
-      <ul class="popup-classes-list">${listItemsHtml}</ul>
-    `
-    const btn = document.createElement('button')
-    btn.className = 'popup-action-btn'
-    btn.innerText = '🔍 Abrir editor'
-    btn.onclick = () => {
-      map.value.closePopup()
-      if (onOpenEditor) onOpenEditor(props)
-    }
-    container.appendChild(btn)
-    return container
-  }
+  let mapClickSetup = false
 
   function renderMarkers() {
     if (!geoJsonData.value) return
@@ -72,7 +44,6 @@ export function useCampaign(
       activeClasses.sort((a, b) => countByClass[b] - countByClass[a])
 
       const [lon, lat] = feature.geometry.coordinates
-      const popupFactory = () => createPopupContent(props, countByClass)
 
       activeClasses.forEach((cat) => {
         const count = countByClass[cat]
@@ -88,7 +59,11 @@ export function useCampaign(
           radius: radius,
         })
 
-        marker.bindPopup(popupFactory, { minWidth: 220, maxWidth: 240 })
+        marker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e)
+          selectedFeature.value = { props, summary: { ...countByClass } }
+        })
+
         markersLayerGroup.value.addLayer(marker)
       })
     })
@@ -107,6 +82,13 @@ export function useCampaign(
 
       nextTick(() => {
         map.value.invalidateSize()
+
+        // Click en el fondo del mapa → deseleccionar
+        if (!mapClickSetup) {
+          map.value.on('click', () => { selectedFeature.value = null })
+          mapClickSetup = true
+        }
+
         const dummyLayer = L.geoJSON(data)
         if (data.features.length > 0) {
           map.value.fitBounds(dummyLayer.getBounds(), { padding: [50, 50] })
@@ -118,15 +100,41 @@ export function useCampaign(
   }
 
   function handleFilterChange() {
+    selectedFeature.value = null
+    renderMarkers()
+  }
+
+  // Escribe las detecciones editadas de vuelta al geoJSON y actualiza el mapa
+  function updateFeatureDetections(imageName, newDetections) {
+    if (!geoJsonData.value) return
+    const feature = geoJsonData.value.features.find(
+      (f) => f.properties.image_name === imageName,
+    )
+    if (feature) {
+      feature.properties.detections = JSON.parse(JSON.stringify(newDetections))
+      feature.properties.total_detections = newDetections.length
+      // Actualizar el summary de la tarjeta si sigue seleccionada
+      if (selectedFeature.value?.props.image_name === imageName) {
+        const countByClass = {}
+        newDetections.forEach((d) => {
+          if (selectedCategories.value.includes(d.category)) {
+            countByClass[d.category] = (countByClass[d.category] || 0) + 1
+          }
+        })
+        selectedFeature.value = { props: feature.properties, summary: countByClass }
+      }
+    }
     renderMarkers()
   }
 
   return {
     geoJsonData,
     campaignLoaded,
+    selectedFeature,
     loadCampaign,
     renderMarkers,
     handleFilterChange,
+    updateFeatureDetections,
     setOpenEditorCallback,
   }
 }

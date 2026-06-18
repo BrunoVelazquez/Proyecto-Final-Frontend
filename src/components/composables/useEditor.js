@@ -1,6 +1,8 @@
 // components/composables/useEditor.js
 import { ref, computed, nextTick, watch } from 'vue'
 
+const UNDO_LIMIT = 50
+
 export function useEditor({ getCategoryColor, availableCategories, getImageUrl }) {
   // --- Estados del Editor Canvas ---
   const currentEditingImage = ref(null)
@@ -13,6 +15,9 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
   // Referencias del DOM para el Canvas
   const canvasWrap = ref(null)
   const editorCanvas = ref(null)
+  // Callbacks que EditorCanvas invoca con :ref="fn" al montar/desmontar
+  function registerCanvasWrap(el) { canvasWrap.value = el }
+  function registerEditorCanvas(el) { editorCanvas.value = el }
   let ctx = null
   let imgObj = null
   let imgNat = { w: 1, h: 1 }
@@ -26,14 +31,101 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
   const hoveredIdx = ref(-1)
   const drag = { active: false, type: null, idx: -1, sx: 0, sy: 0, ox: 0, oy: 0, obox: [] }
   const drawing = { active: false, sx: 0, sy: 0, ex: 0, ey: 0 }
+  let originalFeatures = []
+
+  // ── Undo / Redo stack ──
+  const undoStack = ref([])
+  const redoStack = ref([])
+
+  function snapshotFeatures() {
+    return JSON.parse(JSON.stringify(currentImageFeatures.value))
+  }
+
+  function pushUndo() {
+    undoStack.value.push(snapshotFeatures())
+    if (undoStack.value.length > UNDO_LIMIT) undoStack.value.shift()
+    redoStack.value = []
+  }
+
+  function undo() {
+    if (undoStack.value.length === 0) return
+    redoStack.value.push(snapshotFeatures())
+    currentImageFeatures.value = undoStack.value.pop()
+    selectedBoxIndex.value = -1
+    renderCanvas()
+  }
+
+  function redo() {
+    if (redoStack.value.length === 0) return
+    undoStack.value.push(snapshotFeatures())
+    currentImageFeatures.value = redoStack.value.pop()
+    selectedBoxIndex.value = -1
+    renderCanvas()
+  }
+
+  const canUndo = computed(() => undoStack.value.length > 0)
+  const canRedo = computed(() => redoStack.value.length > 0)
+
+  // ── Visibilidad de categorías y cajas ──
+  const hiddenCategories = ref(new Set())
+  const hiddenBoxes = ref(new Set())
+  const allHidden = ref(false)
+
+  function toggleAllBoxes() {
+    allHidden.value = !allHidden.value
+    renderCanvas()
+  }
+
+  function toggleCategory(cat) {
+    const s = new Set(hiddenCategories.value)
+    if (s.has(cat)) s.delete(cat)
+    else s.add(cat)
+    hiddenCategories.value = s
+    renderCanvas()
+  }
+
+  function toggleBoxVisibility(box) {
+    const s = new Set(hiddenBoxes.value)
+    if (s.has(box)) s.delete(box)
+    else s.add(box)
+    hiddenBoxes.value = s
+    renderCanvas()
+  }
+
+  function isCategoryVisible(cat) {
+    return !allHidden.value && !hiddenCategories.value.has(cat)
+  }
+
+  function updateCursor() {
+    if (!canvasWrap.value) return
+    if (drawing.active || editorTool.value === 'draw') {
+      canvasWrap.value.style.cursor = 'crosshair'
+    } else if (drag.active) {
+      if (drag.type === 'pan') canvasWrap.value.style.cursor = 'grabbing'
+      else if (drag.type === 'move') canvasWrap.value.style.cursor = 'move'
+      else canvasWrap.value.style.cursor = 'crosshair'
+    } else if (hoveredIdx.value >= 0) {
+      canvasWrap.value.style.cursor = 'pointer'
+    } else {
+      canvasWrap.value.style.cursor = 'grab'
+    }
+  }
+
+  watch(editorTool, () => updateCursor())
 
   function openEditor(properties) {
     currentEditingImage.value = properties.image_name
     currentImageFeatures.value = JSON.parse(JSON.stringify(properties.detections))
+    originalFeatures = JSON.parse(JSON.stringify(properties.detections))
     selectedBoxIndex.value = -1
     editorTool.value = 'select'
     saveStatus.value = ''
     showCharts.value = false
+    undoStack.value = []
+    redoStack.value = []
+    hiddenCategories.value = new Set()
+    hiddenBoxes.value = new Set()
+    allHidden.value = false
 
     nextTick(() => {
       if (!editorCanvas.value) return
@@ -46,7 +138,14 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
         renderCanvas()
       }
       imgObj.src = getImageUrl(properties.image_name)
+
+      window.addEventListener('resize', handleResize)
     })
+  }
+
+  function handleResize() {
+    fitImage()
+    renderCanvas()
   }
 
   function fitImage() {
@@ -69,6 +168,59 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     y: (cy - panY.value) / scale.value,
   })
 
+  // ── Zoom botones ──
+  function zoomIn() {
+    const cx = editorCanvas.value ? editorCanvas.value.width / 2 : 0
+    const cy = editorCanvas.value ? editorCanvas.value.height / 2 : 0
+    const factor = 1.25
+    panX.value = cx - (cx - panX.value) * factor
+    panY.value = cy - (cy - panY.value) * factor
+    scale.value *= factor
+    renderCanvas()
+  }
+
+  function zoomOut() {
+    const cx = editorCanvas.value ? editorCanvas.value.width / 2 : 0
+    const cy = editorCanvas.value ? editorCanvas.value.height / 2 : 0
+    const factor = 0.8
+    panX.value = cx - (cx - panX.value) * factor
+    panY.value = cy - (cy - panY.value) * factor
+    scale.value *= factor
+    renderCanvas()
+  }
+
+  function zoomReset() {
+    fitImage()
+    renderCanvas()
+  }
+
+  function zoomToBox(index) {
+    if (!canvasWrap.value || !editorCanvas.value || index < 0 || index >= currentImageFeatures.value.length) return
+    const box = currentImageFeatures.value[index].bbox
+    const [xmin, ymin, xmax, ymax] = box
+    const bw = xmax - xmin
+    const bh = ymax - ymin
+    const cx = xmin + bw / 2
+    const cy = ymin + bh / 2
+
+    const W = canvasWrap.value.clientWidth
+    const H = canvasWrap.value.clientHeight
+
+    const scaleX = (W * 0.3) / bw
+    const scaleY = (H * 0.3) / bh
+    let newScale = Math.min(scaleX, scaleY)
+
+    const fitScale = Math.min(W / imgNat.w, H / imgNat.h) * 0.92
+    newScale = Math.max(fitScale, Math.min(newScale, 4.0))
+
+    scale.value = newScale
+    panX.value = W / 2 - cx * scale.value
+    panY.value = H / 2 - cy * scale.value
+
+    selectedBoxIndex.value = index
+    renderCanvas()
+  }
+
   function renderCanvas() {
     if (!ctx || !imgObj || !editorCanvas.value) {
       return
@@ -79,7 +231,11 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
 
     ctx.drawImage(imgObj, panX.value, panY.value, imgNat.w * scale.value, imgNat.h * scale.value)
 
+    if (allHidden.value) return
+
     currentImageFeatures.value.forEach((b, i) => {
+      if (hiddenCategories.value.has(b.category) || hiddenBoxes.value.has(b)) return
+
       const color = getCategoryColor(b.category)
       const [xmin, ymin, xmax, ymax] = b.bbox
 
@@ -170,6 +326,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
       drawing.sy = cy
       drawing.ex = cx
       drawing.ey = cy
+      updateCursor()
       return
     }
 
@@ -184,6 +341,8 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
         drag.sx = cx
         drag.sy = cy
         drag.obox = [...bbox]
+        drag.hasMoved = false
+        updateCursor()
         return
       }
     }
@@ -198,7 +357,9 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
       drag.sx = cx
       drag.sy = cy
       drag.obox = [...bbox]
+      drag.hasMoved = false
       renderCanvas()
+      updateCursor()
       return
     }
 
@@ -210,6 +371,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     drag.ox = panX.value
     drag.oy = panY.value
     renderCanvas()
+    updateCursor()
   }
 
   function handleMouseMove(e) {
@@ -219,6 +381,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
       drawing.ex = cx
       drawing.ey = cy
       renderCanvas()
+      updateCursor()
       return
     }
 
@@ -232,12 +395,20 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
         panX.value = drag.ox + dx
         panY.value = drag.oy + dy
       } else if (drag.type === 'move') {
+        if (!drag.hasMoved) {
+          pushUndo()
+          drag.hasMoved = true
+        }
         const b = currentImageFeatures.value[drag.idx].bbox
         b[0] = drag.obox[0] + dxAbs
         b[1] = drag.obox[1] + dyAbs
         b[2] = drag.obox[2] + dxAbs
         b[3] = drag.obox[3] + dyAbs
       } else if (drag.type === 'resize') {
+        if (!drag.hasMoved) {
+          pushUndo()
+          drag.hasMoved = true
+        }
         let [xmin, ymin, xmax, ymax] = drag.obox
         if (drag.handle.includes('l')) xmin = Math.min(xmax - 1, drag.obox[0] + dxAbs)
         if (drag.handle.includes('r')) xmax = Math.max(xmin + 1, drag.obox[2] + dxAbs)
@@ -246,6 +417,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
         currentImageFeatures.value[drag.idx].bbox = [xmin, ymin, xmax, ymax]
       }
       renderCanvas()
+      updateCursor()
       return
     }
 
@@ -254,14 +426,14 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
       hoveredIdx.value = newHover
       renderCanvas()
     }
-    canvasWrap.value.style.cursor =
-      editorTool.value === 'draw' ? 'crosshair' : newHover >= 0 ? 'pointer' : 'default'
+    updateCursor()
   }
 
   function handleMouseUp(e) {
     if (drawing.active) {
       const { cx, cy } = getMousePos(e)
       if (Math.abs(cx - drawing.sx) > 8 && Math.abs(cy - drawing.sy) > 8) {
+        pushUndo()
         const p1 = canvasToAbs(drawing.sx, drawing.sy)
         const p2 = canvasToAbs(cx, cy)
         const xmin = Math.min(p1.x, p2.x)
@@ -278,6 +450,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     drag.active = false
     drawing.active = false
     renderCanvas()
+    updateCursor()
   }
 
   function handleMouseLeave() {
@@ -285,11 +458,15 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     drawing.active = false
     hoveredIdx.value = -1
     renderCanvas()
+    if (canvasWrap.value) canvasWrap.value.style.cursor = 'default'
   }
 
   function hitBox(cx, cy) {
+    if (allHidden.value) return -1
     for (let i = currentImageFeatures.value.length - 1; i >= 0; i--) {
-      const [xmin, ymin, xmax, ymax] = currentImageFeatures.value[i].bbox
+      const box = currentImageFeatures.value[i]
+      if (hiddenCategories.value.has(box.category) || hiddenBoxes.value.has(box)) continue
+      const [xmin, ymin, xmax, ymax] = box.bbox
       const tl = absToCanvas(xmin, ymin)
       const br = absToCanvas(xmax, ymax)
       if (cx >= tl.x && cx <= br.x && cy >= tl.y && cy <= br.y) return i
@@ -319,6 +496,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
   }
 
   function removeBox(index) {
+    pushUndo()
     currentImageFeatures.value.splice(index, 1)
     if (selectedBoxIndex.value === index) selectedBoxIndex.value = -1
     else if (selectedBoxIndex.value > index) selectedBoxIndex.value--
@@ -334,6 +512,13 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     hoveredIdx.value = -1
 
     showCharts.value = false
+    undoStack.value = []
+    redoStack.value = []
+    hiddenCategories.value = new Set()
+    hiddenBoxes.value = new Set()
+    allHidden.value = false
+
+    window.removeEventListener('resize', handleResize)
   }
 
   // ── Computed para estadísticas de detección ──
@@ -353,13 +538,32 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
 
   const totalDetections = computed(() => currentImageFeatures.value.length)
 
-  // ── Guardar cambios (no cierra el modal) ──
+  // ── Callback de guardado inyectado desde BaseMap ──
+  let onSaveCallback = null
+  function setOnSaveCallback(fn) {
+    onSaveCallback = fn
+  }
+
+  // ── Guardar cambios (actualiza geoJSON + mapa) ──
   async function saveChanges() {
     saveStatus.value = 'Guardando...'
     try {
-      // Simulación de guardado - reemplazar con tu endpoint real
-      await new Promise((r) => setTimeout(r, 500))
-      saveStatus.value = `✅ ${currentImageFeatures.value.length} detecciones guardadas`
+      if (onSaveCallback) {
+        onSaveCallback(currentEditingImage.value, currentImageFeatures.value)
+      }
+      // Contar bboxes realmente modificados respecto al estado inicial
+      const current = currentImageFeatures.value
+      const original = originalFeatures
+      const minLen = Math.min(current.length, original.length)
+      let modifiedCount = Math.abs(current.length - original.length)
+      for (let i = 0; i < minLen; i++) {
+        if (JSON.stringify(current[i]) !== JSON.stringify(original[i])) modifiedCount++
+      }
+      // Actualizar snapshot para el próximo guardado
+      originalFeatures = JSON.parse(JSON.stringify(current))
+      saveStatus.value = modifiedCount > 0
+        ? `✅ Detecciones actualizadas`
+        : `✅ Sin cambios`
       setTimeout(() => {
         saveStatus.value = ''
       }, 3000)
@@ -372,6 +576,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
   // ── Cambiar categoría del objeto seleccionado ──
   function changeSelectedCategory(newCat) {
     if (selectedBoxIndex.value >= 0 && currentImageFeatures.value[selectedBoxIndex.value]) {
+      pushUndo()
       currentImageFeatures.value[selectedBoxIndex.value].category = newCat
     }
   }
@@ -384,15 +589,32 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     editorTool,
     saveStatus,
     showCharts,
-    // DOM refs
-    canvasWrap,
-    editorCanvas,
+    // Undo / Redo
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    // Visibilidad
+    hiddenCategories,
+    hiddenBoxes,
+    allHidden,
+    toggleAllBoxes,
+    toggleCategory,
+    toggleBoxVisibility,
+    isCategoryVisible,
+    // Callbacks de registro de DOM (para EditorCanvas)
+    registerCanvasWrap,
+    registerEditorCanvas,
     // Computed
     detectionStats,
     totalDetections,
     // Métodos
     openEditor,
     closeEditor,
+    zoomIn,
+    zoomOut,
+    zoomReset,
+    zoomToBox,
     handleWheel,
     handleMouseDown,
     handleMouseMove,
@@ -400,6 +622,7 @@ export function useEditor({ getCategoryColor, availableCategories, getImageUrl }
     handleMouseLeave,
     removeBox,
     changeSelectedCategory,
+    setOnSaveCallback,
     saveChanges,
   }
 }

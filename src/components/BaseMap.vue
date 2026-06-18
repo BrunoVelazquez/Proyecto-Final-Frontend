@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import ButtonComp from './ButtonComp.vue'
 import FilterCard from './FilterCard.vue'
+import MarkerInfoCard from './MarkerInfoCard.vue'
 import EditorLightbox from './editor/EditorLightbox.vue'
 
 import { useMap } from './composables/useMap'
@@ -21,11 +22,18 @@ const { availableCategories, selectedCategories, getCategoryColor, extractCatego
   useCategories()
 
 function getImageUrl(imageName) {
-  return new URL(`../assets/images/${imageName}`, import.meta.url).href
+  return new URL(`../data/images/${imageName}`, import.meta.url).href
 }
 
 // --- Campaña (fetch + marcadores) ---
-const { campaignLoaded, loadCampaign, handleFilterChange, setOpenEditorCallback } = useCampaign(
+const {
+  campaignLoaded,
+  selectedFeature,
+  loadCampaign,
+  handleFilterChange,
+  updateFeatureDetections,
+  setOpenEditorCallback,
+} = useCampaign(
   map,
   markersLayerGroup,
   { getCategoryColor, extractCategories, selectedCategories, availableCategories },
@@ -39,12 +47,26 @@ const {
   editorTool,
   saveStatus,
   showCharts,
-  canvasWrap,
-  editorCanvas,
+  canUndo,
+  canRedo,
+  undo,
+  redo,
+  hiddenCategories,
+  hiddenBoxes,
+  allHidden,
+  toggleAllBoxes,
+  toggleCategory,
+  toggleBoxVisibility,
+  registerCanvasWrap,
+  registerEditorCanvas,
   detectionStats,
   totalDetections,
   openEditor,
   closeEditor,
+  zoomIn,
+  zoomOut,
+  zoomReset,
+  zoomToBox,
   handleWheel,
   handleMouseDown,
   handleMouseMove,
@@ -52,11 +74,17 @@ const {
   handleMouseLeave,
   removeBox,
   changeSelectedCategory,
+  setOnSaveCallback,
   saveChanges,
 } = useEditor({ getCategoryColor, availableCategories, getImageUrl })
 
 // Conectamos el popup del mapa con el editor
 setOpenEditorCallback(openEditor)
+
+// Cuando se guarda en el editor, escribe de vuelta al geoJSON y re-renderiza marcadores
+setOnSaveCallback((imageName, detections) => {
+  updateFeatureDetections(imageName, detections)
+})
 
 // --- Manejo de filtros (v-model manual sobre selectedCategories) ---
 function onFilterChange(cat) {
@@ -81,13 +109,22 @@ function onFilterChange(cat) {
         />
       </div>
 
-      <FilterCard
-        v-if="campaignLoaded"
-        :availableCategories="availableCategories"
-        :selectedCategories="selectedCategories"
-        :getCategoryColor="getCategoryColor"
-        @change="onFilterChange"
-      />
+      <!-- Panel derecho: filtros + info del marcador seleccionado -->
+      <div v-if="campaignLoaded" class="right-panel">
+        <FilterCard
+          :availableCategories="availableCategories"
+          :selectedCategories="selectedCategories"
+          :getCategoryColor="getCategoryColor"
+          @change="onFilterChange"
+        />
+        <MarkerInfoCard
+          :feature="selectedFeature"
+          :getCategoryColor="getCategoryColor"
+          :getImageUrl="getImageUrl"
+          @openEditor="openEditor"
+          @close="selectedFeature = null"
+        />
+      </div>
     </div>
 
     <EditorLightbox
@@ -101,8 +138,13 @@ function onFilterChange(cat) {
       :totalDetections="totalDetections"
       :availableCategories="availableCategories"
       :getCategoryColor="getCategoryColor"
-      :canvasWrapRef="canvasWrap"
-      :editorCanvasRef="editorCanvas"
+      :registerCanvasWrap="registerCanvasWrap"
+      :registerEditorCanvas="registerEditorCanvas"
+      :canUndo="canUndo"
+      :canRedo="canRedo"
+      :hiddenCategories="hiddenCategories"
+      :hiddenBoxes="hiddenBoxes"
+      :allHidden="allHidden"
       @close="closeEditor"
       @update:editorTool="editorTool = $event"
       @update:selectedBoxIndex="selectedBoxIndex = $event"
@@ -110,6 +152,15 @@ function onFilterChange(cat) {
       @removeBox="removeBox"
       @changeCategory="changeSelectedCategory"
       @save="saveChanges"
+      @undo="undo"
+      @redo="redo"
+      @toggleAllBoxes="toggleAllBoxes"
+      @toggleCategory="toggleCategory"
+      @toggleBoxVisibility="toggleBoxVisibility"
+      @zoomIn="zoomIn"
+      @zoomOut="zoomOut"
+      @zoomReset="zoomReset"
+      @zoomToBox="zoomToBox"
       @wheel="handleWheel"
       @mousedown="handleMouseDown"
       @mousemove="handleMouseMove"
@@ -147,6 +198,20 @@ function onFilterChange(cat) {
   flex-direction: column;
   gap: 16px;
 }
+
+.right-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
 .pill-trigger-btn :deep(button) {
   background-color: white;
   color: #5b5394;

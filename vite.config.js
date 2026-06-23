@@ -7,6 +7,16 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
+    server: {
+      allowedHosts: ['.ngrok-free.dev', '.ngrok-free.app'],
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, '')
+        }
+      }
+    },
   plugins: [
     vue(),
     vueJsx(),

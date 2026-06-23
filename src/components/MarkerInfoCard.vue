@@ -7,7 +7,7 @@ const props = defineProps({
   getImageUrl: { type: Function, required: true },
 })
 
-defineEmits(['openEditor', 'close'])
+defineEmits(['openEditor', 'moveMarker', 'close'])
 
 const imageUrl = computed(() =>
   props.feature ? props.getImageUrl(props.feature.props.image_name) : null,
@@ -43,9 +43,14 @@ const summaryEntries = computed(() =>
         </ul>
       </div>
 
-      <button class="mic-action-btn" @click="$emit('openEditor', feature.props)">
-        🔍 Abrir editor
-      </button>
+      <div class="mic-action-row">
+        <button class="mic-action-btn" @click="$emit('openEditor', feature.props)">
+          🔍 Abrir editor
+        </button>
+        <button class="mic-action-btn mic-move-btn" @click="$emit('moveMarker', feature.props)">
+          📍 Mover
+        </button>
+      </div>
     </div>
   </Transition>
 </template>
@@ -137,21 +142,34 @@ const summaryEntries = computed(() =>
   color: #5b5394;
 }
 
-.mic-action-btn {
-  background-color: #1d9e75;
-  color: white;
-  border: none;
-  padding: 10px 0;
-  width: 100%;
-  font-weight: bold;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.2s;
+.mic-action-row {
+  display: flex;
+  gap: 0;
   flex-shrink: 0;
   margin-top: 6px;
 }
+
+.mic-action-btn {
+  flex: 1;
+  background-color: #1d9e75;
+  color: white;
+  border: none;
+  padding: 10px 4px;
+  font-weight: bold;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
 .mic-action-btn:hover {
   background-color: #178a64;
+}
+
+.mic-move-btn {
+  background-color: #5b5394;
+  border-left: 1px solid rgba(255,255,255,0.2);
+}
+.mic-move-btn:hover {
+  background-color: #4a437a;
 }
 
 /* Slide-in animation */

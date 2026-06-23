@@ -12,6 +12,7 @@ import { useCategories } from './composables/useCategories'
 import { useCampaign } from './composables/useCampaign'
 import { useEditor } from './composables/useEditor'
 import { useTrajectory } from './composables/useTrajectory'
+import { useCoastSnap } from './composables/useCoastSnap'
 
 // --- Referencias del DOM ---
 const mapContainer = ref()
@@ -29,21 +30,34 @@ function getImageUrl(imageName) {
 
 // --- Campaña (fetch + marcadores) ---
 const {
+  geoJsonData,
   campaignLoaded,
   selectedFeature,
   unmappedFeatures,
   placementModeFeature,
+  moveMarkerMode,
+  moveMarkerTarget,
   loadCampaign,
+  renderMarkers,
   handleFilterChange,
   updateFeatureDetections,
   showTrajectory,
   clearTrajectoryLayer,
   applyOffset,
+  startMoveMarker,
+  cancelMoveMarker,
 } = useCampaign(
   map,
   markersLayerGroup,
   { getCategoryColor, extractCategories, selectedCategories, availableCategories, getImageUrl },
 )
+
+// --- Coast Snapping ---
+const { snapStatus, snapMessage, snapAllToCoast, dismissSnap } = useCoastSnap()
+
+function onSnapToCoast() {
+  snapAllToCoast(geoJsonData, renderMarkers)
+}
 
 // --- Calibración de desfasaje GPS ---
 const { trajectoryData, loadTrajectory, getPositionAtOffset } = useTrajectory()
@@ -130,7 +144,7 @@ function onFilterChange(cat) {
 
 <template>
   <div class="app-container">
-    <div class="map-view-wrapper" :class="{ 'placement-mode': !!placementModeFeature }">
+    <div class="map-view-wrapper" :class="{ 'placement-mode': !!placementModeFeature || moveMarkerMode }">
       <div ref="mapContainer" class="map-canvas"></div>
 
       <div class="fab-position-left">
@@ -140,6 +154,14 @@ function onFilterChange(cat) {
           variant="primary"
           class="pill-trigger-btn pill-calibrate-btn"
           @click="startCalibration"
+        />
+        <ButtonComp
+          v-if="campaignLoaded"
+          label="Ajustar a Costa"
+          variant="primary"
+          class="pill-trigger-btn"
+          :disabled="snapStatus === 'loading' || snapStatus === 'snapping'"
+          @click="onSnapToCoast"
         />
         <ButtonComp
           label="Cargar campaña"
@@ -165,6 +187,7 @@ function onFilterChange(cat) {
           :getCategoryColor="getCategoryColor"
           :getImageUrl="getImageUrl"
           @openEditor="openEditor"
+          @moveMarker="startMoveMarker"
           @close="selectedFeature = null"
         />
 
@@ -178,6 +201,21 @@ function onFilterChange(cat) {
           @apply="onApplyOffset"
           @cancel="onCancelCalibration"
         />
+      </div>
+
+      <!-- Coast snap status banner -->
+      <Transition name="snap-fade">
+        <div v-if="snapStatus" class="snap-status-banner" :class="`snap-${snapStatus}`">
+          <span v-if="snapStatus === 'loading' || snapStatus === 'snapping'" class="snap-spinner">⧗</span>
+          <span>{{ snapMessage }}</span>
+          <button v-if="snapStatus === 'error' || snapStatus === 'done'" class="move-cancel-btn" @click="dismissSnap">✕</button>
+        </div>
+      </Transition>
+
+      <!-- Move marker mode banner -->
+      <div v-if="moveMarkerMode" class="move-marker-banner">
+        <span>📍 Haz click en el mapa para reubicar <b>{{ moveMarkerTarget?.properties?.image_name }}</b></span>
+        <button class="move-cancel-btn" @click="cancelMoveMarker">✕ Cancelar</button>
       </div>
 
       <!-- Panel derecho: filtros y lista de no ubicados -->
@@ -195,24 +233,24 @@ function onFilterChange(cat) {
             <p v-if="placementModeFeature" class="placement-instruction">Haz click en el mapa para ubicar la imagen seleccionada.</p>
           </div>
           <div class="unmapped-list">
-            <div v-for="feat in unmappedFeatures" :key="feat.properties.image_name" 
+            <div v-for="feat in unmappedFeatures" :key="feat.properties.image_name"
                  class="unmapped-item"
                  :class="{ 'is-placing': placementModeFeature?.properties.image_name === feat.properties.image_name }">
               <img :src="getImageUrl(feat.properties.image_name)" alt="thumbnail" class="unmapped-thumb" />
               <div class="unmapped-info">
                 <span class="unmapped-name">{{ feat.properties.image_name }}</span>
                 <div class="unmapped-actions">
-                  <button 
+                  <button
                     v-if="placementModeFeature?.properties.image_name !== feat.properties.image_name"
-                    class="btn-place" 
+                    class="btn-place"
                     @click.stop="placementModeFeature = feat"
                     :disabled="calibrationMode"
                   >
                     Ubicar en mapa
                   </button>
-                  <button 
+                  <button
                     v-else
-                    class="btn-cancel-place" 
+                    class="btn-cancel-place"
                     @click.stop="placementModeFeature = null"
                   >
                     Cancelar
@@ -294,6 +332,90 @@ function onFilterChange(cat) {
 }
 .placement-mode .map-canvas {
   cursor: crosshair !important;
+}
+
+/* Move marker mode banner */
+.move-marker-banner {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  background: rgba(30, 20, 60, 0.92);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.move-cancel-btn {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  padding: 5px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+.move-cancel-btn:hover {
+  background: rgba(231, 76, 60, 0.7);
+}
+
+/* Coast Snap Status Banner */
+.snap-status-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1002;
+  padding: 10px 20px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+  white-space: nowrap;
+  color: white;
+}
+
+.snap-loading, .snap-snapping {
+  background: rgba(30, 20, 60, 0.9);
+}
+.snap-done {
+  background: rgba(29, 158, 117, 0.92);
+}
+.snap-error {
+  background: rgba(220, 53, 69, 0.92);
+}
+
+.snap-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.snap-fade-enter-active,
+.snap-fade-leave-active {
+  transition: opacity 0.3s, transform 0.3s;
+}
+.snap-fade-enter-from,
+.snap-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 .fab-position-left {

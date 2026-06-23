@@ -4,7 +4,7 @@ import { ref, computed, nextTick } from 'vue'
 import exifr from 'exifr'
 import { getPhotoPlace } from '../../utils/trajectoryUtils.js'
 
-const API_BASE_URL = 'http://127.0.0.1:8000'
+const API_BASE_URL = '/api'
 
 export function useCampaign(
   map,
@@ -20,6 +20,11 @@ export function useCampaign(
   // Funcionalidad para ubicar manualmente fotos sin GPS
   const placementModeFeature = ref(null)
 
+  // Funcionalidad para mover un marcador libremente en el mapa
+  const moveMarkerMode = ref(false)
+  const moveMarkerTarget = ref(null) // { props, geometry } of the feature being moved
+  let moveMarkerPreviewCircle = null
+
   const unmappedFeatures = computed(() => {
     if (!geoJsonData.value) return []
     return geoJsonData.value.features.filter(
@@ -28,6 +33,8 @@ export function useCampaign(
   })
 
   let mapClickSetup = false
+  let moveMarkerClickHandler = null
+  let moveMarkerMoveHandler = null
 
   // ── Trajectory polyline ──
   let trajectoryPolyline = null
@@ -274,12 +281,88 @@ if (exifData?.DateTimeOriginal) {
     renderMarkers()
   }
 
+  function startMoveMarker(featureProps) {
+    if (!map.value || !geoJsonData.value) return
+
+    // Find the actual feature object to track
+    const feature = geoJsonData.value.features.find(
+      (f) => f.properties.image_name === featureProps.image_name
+    )
+    if (!feature) return
+
+    moveMarkerTarget.value = feature
+    moveMarkerMode.value = true
+    selectedFeature.value = null // Close the info card while relocating
+
+    const [initLon, initLat] = feature.geometry.coordinates
+
+    // Draw a draggable preview circle
+    if (moveMarkerPreviewCircle) {
+      moveMarkerPreviewCircle.remove()
+    }
+    moveMarkerPreviewCircle = L.circleMarker([initLat, initLon], {
+      color: '#f97316',
+      fillColor: '#f97316',
+      fillOpacity: 0.4,
+      opacity: 1,
+      weight: 2,
+      radius: 12,
+    }).addTo(map.value)
+
+    // Follow mouse on move
+    moveMarkerMoveHandler = (e) => {
+      moveMarkerPreviewCircle.setLatLng(e.latlng)
+    }
+    // Confirm position on click
+    moveMarkerClickHandler = (e) => {
+      L.DomEvent.stopPropagation(e)
+      saveMarkerPosition(e.latlng.lat, e.latlng.lng)
+    }
+
+    map.value.on('mousemove', moveMarkerMoveHandler)
+    map.value.once('click', moveMarkerClickHandler)
+    map.value.getContainer().style.cursor = 'crosshair'
+  }
+
+  function saveMarkerPosition(lat, lon) {
+    if (!moveMarkerTarget.value) return
+
+    // Update the feature coordinates
+    moveMarkerTarget.value.geometry.coordinates = [lon, lat]
+    moveMarkerTarget.value.properties.manual_placement = true
+    if (moveMarkerTarget.value.properties.gps) {
+      moveMarkerTarget.value.properties.gps.latitude = lat
+      moveMarkerTarget.value.properties.gps.longitude = lon
+    }
+
+    cancelMoveMarker()
+    renderMarkers()
+  }
+
+  function cancelMoveMarker() {
+    moveMarkerMode.value = false
+    moveMarkerTarget.value = null
+    if (moveMarkerPreviewCircle) {
+      moveMarkerPreviewCircle.remove()
+      moveMarkerPreviewCircle = null
+    }
+    if (map.value) {
+      if (moveMarkerMoveHandler) map.value.off('mousemove', moveMarkerMoveHandler)
+      if (moveMarkerClickHandler) map.value.off('click', moveMarkerClickHandler)
+      map.value.getContainer().style.cursor = ''
+    }
+    moveMarkerMoveHandler = null
+    moveMarkerClickHandler = null
+  }
+
   return {
     geoJsonData,
     campaignLoaded,
     selectedFeature,
     unmappedFeatures,
     placementModeFeature,
+    moveMarkerMode,
+    moveMarkerTarget,
     loadCampaign,
     renderMarkers,
     handleFilterChange,
@@ -287,5 +370,7 @@ if (exifData?.DateTimeOriginal) {
     showTrajectory,
     clearTrajectoryLayer,
     applyOffset,
+    startMoveMarker,
+    cancelMoveMarker,
   }
 }

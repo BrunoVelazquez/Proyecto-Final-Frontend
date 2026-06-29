@@ -4,8 +4,7 @@ import { ref, computed, nextTick } from 'vue'
 import exifr from 'exifr'
 import { getPhotoPlace } from '../../utils/trajectoryUtils.js'
 
-const _apiOrigin = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
-const API_BASE_URL = import.meta.env.DEV ? '/api' : `${_apiOrigin}/api`
+const API_BASE_URL = '/api'
 
 export function useCampaign(
   map,

@@ -26,7 +26,8 @@ const { availableCategories, selectedCategories, getCategoryColor, extractCatego
 
 function getImageUrl(imageName) {
   if (!imageName) return ''
-  return `http://localhost:8000/api/db/imagenes/${imageName}/`
+  const apiUrl = import.meta.env.DEV ? '' : import.meta.env.VITE_API_URL || ''
+  return `${apiUrl}/api/db/imagenes/${imageName}/`
 }
 
 // --- Campaña (fetch + marcadores) ---

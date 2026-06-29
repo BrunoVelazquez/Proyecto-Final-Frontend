@@ -18,14 +18,13 @@ export function useCoastSnap() {
     // Add a small padding to the bounding box to catch coast near edges
     const pad = 0.05
     const bbox = `${south - pad},${west - pad},${north + pad},${east + pad}`
-    const query = `
-      [out:json][timeout:30];
-      way["natural"="coastline"](${bbox});
-      (._;>;);
-      out body;
-    `
-    const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`
-    const response = await fetch(url)
+    const query = `[out:json][timeout:30];way["natural"="coastline"](${bbox});(._;>;);out body;`
+    const apiUrl = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+    const response = await fetch(`${apiUrl}/api/overpass/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    })
     if (!response.ok) throw new Error(`Overpass API error: ${response.status}`)
     const data = await response.json()
 

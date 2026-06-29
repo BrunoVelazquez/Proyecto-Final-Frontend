@@ -165,7 +165,7 @@ export function useCampaign(
 
   async function loadCampaign() {
     try {
-      const response = await fetch(`${API_BASE_URL}/dummy`)
+      const response = await fetch(`${API_BASE_URL}/db/geojson/`)
       const data = await response.json()
 
       // Add EXIF timestamp parsing concurrently

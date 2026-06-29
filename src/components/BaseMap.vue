@@ -25,7 +25,8 @@ const { availableCategories, selectedCategories, getCategoryColor, extractCatego
   useCategories()
 
 function getImageUrl(imageName) {
-  return new URL(`../data/images/${imageName}`, import.meta.url).href
+  if (!imageName) return ''
+  return `http://localhost:8000/api/db/imagenes/${imageName}/`
 }
 
 // --- Campaña (fetch + marcadores) ---

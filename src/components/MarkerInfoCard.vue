@@ -9,9 +9,10 @@ const props = defineProps({
 
 defineEmits(['openEditor', 'moveMarker', 'close'])
 
-const imageUrl = computed(() =>
-  props.feature ? props.getImageUrl(props.feature.props.image_name) : null,
-)
+const imageUrl = computed(() => {
+  const url = props.feature ? props.getImageUrl(props.feature.props.image_name) : null
+  return url ? `${url}?res=thumb` : null
+})
 
 const summaryEntries = computed(() =>
   props.feature

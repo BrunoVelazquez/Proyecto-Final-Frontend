@@ -4,7 +4,8 @@ import { ref, computed, nextTick } from 'vue'
 import exifr from 'exifr'
 import { getPhotoPlace } from '../../utils/trajectoryUtils.js'
 
-const API_BASE_URL = '/api'
+const apiUrl = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const API_BASE_URL = `${apiUrl}/api`
 
 export function useCampaign(
   map,
@@ -165,6 +166,7 @@ export function useCampaign(
 
   async function loadCampaign() {
     try {
+        console.log(`${API_BASE_URL}/db/geojson/`)
       const response = await fetch(`${API_BASE_URL}/db/geojson/`)
       const data = await response.json()
 
